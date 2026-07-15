@@ -2,12 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Trophy, Users, Calendar, DollarSign, Plus, Trash2, Shuffle, 
   CheckCircle, Lock, Edit2, Save, Share2, ArrowLeft, 
-  Beer, Monitor, Target, AlertTriangle, LogOut, Eye
+  Beer, Monitor, Target, AlertTriangle, LogOut, Eye, Settings
 } from 'lucide-react';
 
-// Importações do Firebase
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { db } from "./firebase"; 
 
 // ============================================================================
 // 1. CONFIGURAÇÕES BASE
@@ -15,7 +14,7 @@ import { db } from "./firebase";
 
 const BRAND = {
   name: "Copa SMI 2026",
-  logo: "/SMI.png",
+  logo: "/favicon.ico", // Aproveitando o ícone novo
   arenaLogo: "/ARENA.png",
   arenaLink: "https://www.instagram.com/arenaultrarp/",
   sponsors: [
@@ -83,15 +82,23 @@ export default function TournamentApp() {
   const [stages, setStages] = useState([]);
   const [bets, setBets] = useState([]);
 
-  // Modais e Formulários
+  // Modais e Formulários (Atletas)
   const [editingPlayerId, setEditingPlayerId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', side: 'R', uniformPaid: false, manualPts: 0 });
+  const [editForm, setEditForm] = useState({ name: '', side: 'R', uniformPaid: false, manualPts: 0, password: '' });
   const [showAddPlayerForm, setShowAddPlayerForm] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerSide, setNewPlayerSide] = useState("R");
+  const [newPlayerPassword, setNewPlayerPassword] = useState("");
+
+  // Etapas / Sorteio / Manual
+  const [numGroupsToDraw, setNumGroupsToDraw] = useState(2);
+  const [drawMode, setDrawMode] = useState('auto'); // auto ou manual
+  const [manualPairing, setManualPairing] = useState({ p1: '', p2: '' });
+  const [tempPairs, setTempPairs] = useState([]);
+  
+  // Financeiro / Outros
   const [newTrans, setNewTrans] = useState({ desc: "", amount: "", type: "out" });
   const [showTransForm, setShowTransForm] = useState(false);
-  const [numGroupsToDraw, setNumGroupsToDraw] = useState(2);
   const [penaltyForm, setPenaltyForm] = useState({ playerId: "", type: "uniform" });
   const [finMonth, setFinMonth] = useState(1);
   const [matchToFinish, setMatchToFinish] = useState(null);
@@ -108,7 +115,6 @@ export default function TournamentApp() {
     let unsubs = [];
     const setupDB = async () => {
         try {
-            // Verifica se o banco já foi criado, senão cria as coleções iniciais
             const snap = await getDoc(doc(db, "smi", "stages"));
             if (!snap.exists()) {
                 await setDoc(doc(db, "smi", "players"), { list: INITIAL_PLAYERS });
@@ -121,7 +127,6 @@ export default function TournamentApp() {
                 }))});
             }
 
-            // Escuta as alterações na nuvem em tempo real
             unsubs = [
                 onSnapshot(doc(db, "smi", "players"), d => { if(d.exists()) setPlayers(d.data().list || []) }),
                 onSnapshot(doc(db, "smi", "stages"), d => { if(d.exists()) setStages(d.data().list || []) }),
@@ -131,14 +136,12 @@ export default function TournamentApp() {
             setLoadingDB(false);
         } catch (error) {
             console.error("Erro ao conectar no Firebase:", error);
-            alert("Erro de conexão com o banco. Verifique suas regras do Firestore.");
         }
     };
     setupDB();
     return () => unsubs.forEach(u => u());
   }, []);
 
-  // FUNÇÕES DE ESCRITA NA NUVEM
   const syncPlayers = (arr) => setDoc(doc(db, "smi", "players"), { list: arr });
   const syncStages = (arr) => setDoc(doc(db, "smi", "stages"), { list: arr });
   const syncTrans = (arr) => setDoc(doc(db, "smi", "transactions"), { list: arr });
@@ -186,18 +189,15 @@ export default function TournamentApp() {
 
   const financials = useMemo(() => {
     const totalUniforms = players.filter(p=>p.uniformPaid).length * UNIFORM_PRICE;
-    const s = stages.find(x=>x.id === finMonth);
     let drink = 0, game = 0, dayuse = 0, caixa = 0;
-    
+    const s = stages.find(x=>x.id === finMonth);
     s?.entries?.forEach(e => {
         if (e.paid) { if (e.drink) drink += DRINK_PRICE; if (e.play) { game += GAME_PRICE; dayuse += 10; caixa += 10; } }
     });
-
     const outs = transactions.filter(t=>t.sid===finMonth && t.type==='out').reduce((acc,t)=>acc+t.val,0);
     let totalIncome = totalUniforms; let totalExpense = 0;
     stages.forEach(st => { st?.entries?.forEach(e => { if(e.paid) { if(e.drink) totalIncome += DRINK_PRICE; if(e.play) totalIncome += GAME_PRICE; } }); });
     transactions.forEach(t => t.type === 'in' ? totalIncome+=t.val : totalExpense+=t.val);
-
     return { drink, game, dayuse, caixa, outs, totalBalance: totalIncome - totalExpense, totalUniforms };
   }, [stages, transactions, players, finMonth]);
 
@@ -208,15 +208,14 @@ export default function TournamentApp() {
           const ms = (s.matches || []).filter(m => (m.pa?.id===p.id || m.pb?.id===p.id) && m.f);
           let v=0, pf=0, ps=0;
           ms.forEach(m => {
-              const my = m.pa?.id===p.id ? m.sA : m.sB;
-              const op = m.pa?.id===p.id ? m.sB : m.sA;
+              const my = m.pa?.id===p.id ? m.sA : m.sB; const op = m.pa?.id===p.id ? m.sB : m.sA;
               pf+=my; ps+=op; if(my>op) v++;
           });
           return { ...p, v, s: pf-ps, pf, ps };
       }).sort((a,b) => b.v - a.v || b.s - a.s || b.pf - a.pf);
   };
 
-  // --- HANDLERS COM FIREBASE ---
+  // --- HANDLERS ---
   const updateStage = (sid, data) => syncStages(stages.map(s => s.id === sid ? { ...s, ...data } : s));
   
   const handleLogin = (e) => {
@@ -226,11 +225,20 @@ export default function TournamentApp() {
   };
   const handleLogout = () => { setIsAdmin(false); if (activeTab === 'financial_hub') setActiveTab('dashboard'); };
 
+  // Login da Bet Validando a Senha do Atleta
   const handleBetLogin = (e) => {
       e.preventDefault();
       if (!betLoginId) return alert("Selecione seu nome.");
-      if (betPassword === "123") { setLoggedBettorId(Number(betLoginId)); setBetPassword(""); } 
-      else { alert("Senha incorreta. (Dica de teste: use 123)"); }
+      
+      const atleta = players.find(p => p.id === Number(betLoginId));
+      const senhaCorreta = atleta?.password || "123"; // Se não tem senha, a padrão é 123
+      
+      if (betPassword === senhaCorreta || betPassword === ADMIN_PASSWORD) { 
+          setLoggedBettorId(Number(betLoginId)); 
+          setBetPassword(""); 
+      } else { 
+          alert("Senha incorreta. Fale com a organização se esqueceu."); 
+      }
   };
 
   const handleSaveBet = (mid, sA, sB) => {
@@ -241,29 +249,45 @@ export default function TournamentApp() {
       setTempBet({...tempBet, [mid]: undefined}); 
   };
 
+  // Gestão de Atletas
   const savePlayerEdit = (pid) => { syncPlayers(players.map(p => p.id === pid ? { ...p, ...editForm, manualPts: Number(editForm.manualPts) || 0 } : p)); setEditingPlayerId(null); };
-  const handleAddPlayer = () => { if(newPlayerName) { syncPlayers([...players, {id:Date.now(), name:newPlayerName, side:newPlayerSide, uniformPaid:false, manualPts: 0}]); setShowAddPlayerForm(false); setNewPlayerName(""); }};
+  const handleAddPlayer = () => { if(newPlayerName) { syncPlayers([...players, {id:Date.now(), name:newPlayerName, side:newPlayerSide, password:newPlayerPassword, uniformPaid:false, manualPts: 0}]); setShowAddPlayerForm(false); setNewPlayerName(""); setNewPlayerPassword(""); }};
   const removePlayer = (pid) => { if(window.confirm("Remover atleta?")) syncPlayers(players.filter(p=>p.id!==pid)); };
   
   const toggleCheckin = (sid, pid) => { const s = stages.find(x=>x.id===sid); const isConf = s.confirmed.includes(pid); const nConf = isConf ? s.confirmed.filter(id=>id!==pid) : [...s.confirmed, pid]; let nEnt = [...s.entries]; if(!isConf && !nEnt.find(e=>e.pid===pid)) { nEnt.push({pid, drink:false, paid:false, play:true}); } updateStage(sid, { confirmed: nConf, entries: nEnt }); };
   const toggleEntryProp = (sid, pid, prop) => { const s = stages.find(x=>x.id===sid); const nEnt = s.entries.map(e=>e.pid===pid?{...e, [prop]:!e[prop]}:e); updateStage(sid, { entries: nEnt }); };
-  const redoDraw = (sid) => { if(window.confirm("Isso apagará jogos e apostas da etapa. Confirmar?")) { updateStage(sid, { status: 'registration', pairs: [], groups: [], matches: [], tv: { q1: null, q2: null } }); } };
   
-  const drawGroups = (sid) => {
-      const s = stages.find(x=>x.id===sid); const playingIds = s.entries.filter(e=>e.play).map(e=>e.pid); const pool = players.filter(p=>s.confirmed.includes(p.id) && playingIds.includes(p.id));
-      if(pool.length < 2) return alert("Mínimo 2 jogadores para jogar.");
-      let r = pool.filter(p=>p.side==='R'), l = pool.filter(p=>p.side==='L');
-      let safe=0; while(Math.abs(r.length-l.length)>1 && safe<50){ if(r.length>l.length)l.push({...r.pop(),temp:'L'}); else r.push({...l.pop(),temp:'R'}); safe++; }
-      const shuff = arr => arr.sort(()=>Math.random()-0.5); r=shuff(r); l=shuff(l);
-      const pairs=[]; const len=Math.min(r.length, l.length);
-      for(let i=0; i<len; i++) pairs.push({id:i+1, p1:r[i].id, p2:l[i].id, pts:0});
+  const redoDraw = (sid) => { if(window.confirm("Isso apagará jogos e apostas da etapa. Confirmar?")) { updateStage(sid, { status: 'registration', pairs: [], groups: [], matches: [], tv: { q1: null, q2: null } }); setTempPairs([]); } };
+  
+  // Função que pega uma lista de Duplas e transforma em Grupos e Jogos
+  const generateGroupsAndMatches = (sid, finalPairs) => {
       const groups = Array.from({length:numGroupsToDraw}, (_,i)=>({id:i+1, name:`Grupo ${String.fromCharCode(65+i)}`, pairs:[]}));
-      pairs.forEach((p,i)=> { groups[i%numGroupsToDraw].pairs.push(p); p.g=groups[i%numGroupsToDraw].id; });
+      finalPairs.forEach((p,i)=> { groups[i%numGroupsToDraw].pairs.push(p); p.g=groups[i%numGroupsToDraw].id; });
       let matches=[], mid=Date.now(); 
       const groupMatches = groups.map(g => { const gm=[]; for(let i=0; i<g.pairs.length; i++) for(let j=i+1; j<g.pairs.length; j++) gm.push({gId:g.id, pa:g.pairs[i], pb:g.pairs[j]}); return gm; });
       const maxLen = Math.max(...groupMatches.map(gm=>gm.length), 0);
       for(let i=0; i<maxLen; i++) { groups.forEach((_, gIdx) => { if(groupMatches[gIdx][i]) matches.push({id:mid++, stage:'group', ...groupMatches[gIdx][i], sA:0, sB:0, f:false}); }); }
-      updateStage(sid, {pairs, groups, matches, status:'active'});
+      updateStage(sid, {pairs: finalPairs, groups, matches, status:'active'});
+      setTempPairs([]);
+  };
+
+  // Sorteio Automático
+  const drawGroupsAuto = (sid) => {
+      const s = stages.find(x=>x.id===sid); const playingIds = s.entries.filter(e=>e.play).map(e=>e.pid); const pool = players.filter(p=>s.confirmed.includes(p.id) && playingIds.includes(p.id));
+      if(pool.length < 2) return alert("Mínimo 2 jogadores.");
+      let r = pool.filter(p=>p.side==='R'), l = pool.filter(p=>p.side==='L');
+      let safe=0; while(Math.abs(r.length-l.length)>1 && safe<50){ if(r.length>l.length)l.push({...r.pop(),temp:'L'}); else r.push({...l.pop(),temp:'R'}); safe++; }
+      const shuff = arr => arr.sort(()=>Math.random()-0.5); r=shuff(r); l=shuff(l);
+      const autoPairs=[]; const len=Math.min(r.length, l.length);
+      for(let i=0; i<len; i++) autoPairs.push({id:i+1, p1:r[i].id, p2:l[i].id, pts:0});
+      generateGroupsAndMatches(sid, autoPairs);
+  };
+
+  // Montagem Manual (Adiciona dupla temporária)
+  const handleAddManualPair = () => {
+      if(!manualPairing.p1 || !manualPairing.p2 || manualPairing.p1 === manualPairing.p2) return alert("Selecione dois atletas diferentes.");
+      setTempPairs([...tempPairs, { id: tempPairs.length + 1, p1: Number(manualPairing.p1), p2: Number(manualPairing.p2), pts: 0 }]);
+      setManualPairing({p1: '', p2: ''});
   };
 
   const genMataMata = (sid) => {
@@ -305,12 +329,12 @@ export default function TournamentApp() {
   if (isAdmin) { menuItems.push({ id: 'financial_hub', icon: DollarSign, label: 'Financeiro' }); }
   const currentTabLabel = menuItems.find(i => i.id === activeTab)?.label || 'Acesso Restrito';
 
-  // --- TELA DE CARREGAMENTO DO FIREBASE ---
+  // --- RENDERS ---
   if (loadingDB) {
       return <div className="h-screen w-screen bg-[#121214] flex flex-col items-center justify-center space-y-4"><Target className="w-12 h-12 text-red-600 animate-spin" /><span className="text-[#8D8D99] font-bold tracking-widest text-xs uppercase animate-pulse">Conectando à Nuvem...</span></div>;
   }
 
-  // --- VISTA COMPARTILHAMENTO ---
+  // VISTA COMPARTILHAMENTO
   if(shareMode) {
       return (
         <div className="min-h-screen bg-[#121214] flex items-center justify-center p-4">
@@ -334,7 +358,7 @@ export default function TournamentApp() {
       );
   }
 
-  // --- MODO TV (TELÃO DA ARENA) ---
+  // MODO TV
   if(tvMode) {
       const stage = stages.find(s=>s.id===activeStageId) || stages[0];
       const stageRank = getStageRank(stage?.id);
@@ -379,11 +403,11 @@ export default function TournamentApp() {
       );
   }
 
-  // --- ESTRUTURA DASHBOARD HÍBRIDO ---
+  // DASHBOARD HÍBRIDO
   return (
     <div className="min-h-screen bg-[#121214] font-sans text-[#E1E1E6] flex">
       
-      {/* SIDEBAR (PC) */}
+      {/* SIDEBAR */}
       <aside className="hidden md:flex flex-col w-64 h-screen bg-[#202024] border-r border-[#323238] p-6 fixed left-0 top-0 z-30 justify-between">
          <div className="space-y-8">
             <div className="flex items-center gap-3"><img src={BRAND.logo} alt="Logo" className="h-8 w-8 rounded object-cover" /><div className="truncate"><h1 className="text-sm font-bold text-[#E1E1E6] uppercase">{BRAND.name}</h1><p className="text-[10px] text-[#8D8D99] uppercase tracking-wider">Painel Organizador</p></div></div>
@@ -414,7 +438,7 @@ export default function TournamentApp() {
 
          <main className="max-w-5xl w-full mx-auto p-4 md:p-8 space-y-6">
             
-            {/* === ABA 1: RANKING GERAL === */}
+            {/* === ABA 1: RANKING === */}
             {activeTab === 'dashboard' && (
                <div className="space-y-6 animate-in fade-in duration-200">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -436,38 +460,25 @@ export default function TournamentApp() {
                            <Card className="p-8 w-full max-w-sm text-center border-yellow-500/30">
                                <Target className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
                                <h3 className="text-2xl font-black text-[#E1E1E6] mb-1 uppercase tracking-tight">SMI BET</h3>
-                               <p className="text-sm text-[#8D8D99] mb-6">Aposte nos jogos e suba no ranking da resenha.</p>
+                               <p className="text-sm text-[#8D8D99] mb-6">Selecione seu nome e insira sua senha.</p>
                                <form onSubmit={handleBetLogin} className="flex flex-col gap-4">
                                    <select className="w-full bg-[#121214] border border-[#323238] text-[#E1E1E6] rounded-md px-4 py-3 outline-none focus:border-yellow-500 font-bold" value={betLoginId} onChange={e=>setBetLoginId(e.target.value)}>
                                        <option value="">Quem é você?</option>
                                        {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                    </select>
-                                   <input type="password" placeholder="Senha do Atleta" className="w-full bg-[#121214] border border-[#323238] text-[#E1E1E6] rounded-md px-4 py-3 text-center text-sm tracking-widest outline-none focus:border-yellow-500" value={betPassword} onChange={e=>setBetPassword(e.target.value)} />
+                                   <input type="password" placeholder="Sua Senha" className="w-full bg-[#121214] border border-[#323238] text-[#E1E1E6] rounded-md px-4 py-3 text-center text-sm tracking-widest outline-none focus:border-yellow-500" value={betPassword} onChange={e=>setBetPassword(e.target.value)} />
                                    <Button type="submit" variant="accent" className="py-3 mt-2">Entrar para Apostar</Button>
-                                   <p className="text-[10px] text-[#8D8D99] mt-2 italic">Acesso Restrito: Digite 123</p>
                                </form>
                            </Card>
                        </div>
                    ) : (
                        <div className="space-y-6">
                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#202024] p-6 rounded-md border border-[#323238]">
-                               <div>
-                                   <h2 className="text-lg font-bold text-[#8D8D99]">Bem-vindo de volta,</h2>
-                                   <p className="text-2xl font-black text-[#E1E1E6] uppercase">{players.find(p=>p.id===loggedBettorId)?.name}</p>
-                               </div>
-                               <div className="flex gap-4 items-center w-full md:w-auto">
-                                   <div className="bg-[#121214] border border-yellow-500/50 px-4 py-2 rounded-md text-center flex-1 md:flex-none">
-                                       <div className="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">Seus Pontos</div>
-                                       <div className="text-2xl font-black text-white">{betRanking.find(x=>x.id===loggedBettorId)?.betPts || 0}</div>
-                                   </div>
-                                   <button onClick={()=>setLoggedBettorId(null)} className="p-3 bg-[#29292E] text-[#8D8D99] hover:text-red-500 rounded-md transition-colors"><LogOut className="w-5 h-5"/></button>
-                               </div>
+                               <div><h2 className="text-lg font-bold text-[#8D8D99]">Bem-vindo de volta,</h2><p className="text-2xl font-black text-[#E1E1E6] uppercase">{players.find(p=>p.id===loggedBettorId)?.name}</p></div>
+                               <div className="flex gap-4 items-center w-full md:w-auto"><div className="bg-[#121214] border border-yellow-500/50 px-4 py-2 rounded-md text-center flex-1 md:flex-none"><div className="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">Seus Pontos</div><div className="text-2xl font-black text-white">{betRanking.find(x=>x.id===loggedBettorId)?.betPts || 0}</div></div><button onClick={()=>setLoggedBettorId(null)} className="p-3 bg-[#29292E] text-[#8D8D99] hover:text-red-500 rounded-md transition-colors"><LogOut className="w-5 h-5"/></button></div>
                            </div>
                            
-                           <div className="flex gap-2 overflow-x-auto border-b border-[#323238] pb-4">
-                               <button onClick={()=>setBetView('jogos')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all border ${betView === 'jogos' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/50' : 'bg-[#202024] text-[#8D8D99] border-[#323238] hover:bg-[#29292E]'}`}>Palpites Abertos</button>
-                               <button onClick={()=>setBetView('ranking')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all border ${betView === 'ranking' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/50' : 'bg-[#202024] text-[#8D8D99] border-[#323238] hover:bg-[#29292E]'}`}>Ranking da Resenha</button>
-                           </div>
+                           <div className="flex gap-2 overflow-x-auto border-b border-[#323238] pb-4"><button onClick={()=>setBetView('jogos')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all border ${betView === 'jogos' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/50' : 'bg-[#202024] text-[#8D8D99] border-[#323238] hover:bg-[#29292E]'}`}>Palpites Abertos</button><button onClick={()=>setBetView('ranking')} className={`px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all border ${betView === 'ranking' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/50' : 'bg-[#202024] text-[#8D8D99] border-[#323238] hover:bg-[#29292E]'}`}>Ranking da Resenha</button></div>
 
                            {betView === 'jogos' && (
                                <div className="space-y-4">
@@ -481,10 +492,7 @@ export default function TournamentApp() {
 
                                            return (
                                            <Card key={m.id} className="p-4 border-l-2 border-l-[#323238] hover:border-l-yellow-500 transition-colors">
-                                               <div className="flex justify-between items-center mb-4 border-b border-[#323238] pb-2">
-                                                   <Badge color="gray">{m.stage}</Badge>
-                                                   {myBet && !isEditing && <Badge color="green"><CheckCircle className="w-3 h-3 inline mr-1"/>Palpite Salvo</Badge>}
-                                               </div>
+                                               <div className="flex justify-between items-center mb-4 border-b border-[#323238] pb-2"><Badge color="gray">{m.stage}</Badge>{myBet && !isEditing && <Badge color="green"><CheckCircle className="w-3 h-3 inline mr-1"/>Palpite Salvo</Badge>}</div>
                                                <div className="flex justify-between items-center gap-4">
                                                    <div className="text-center flex-1"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{players.find(p=>p.id===m.pa?.p1)?.name || 'D?'}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{players.find(p=>p.id===m.pa?.p2)?.name || 'A'}</div></div>
                                                    <div className="flex items-center gap-2">
@@ -495,11 +503,7 @@ export default function TournamentApp() {
                                                    <div className="text-center flex-1"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{players.find(p=>p.id===m.pb?.p1)?.name || 'D?'}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{players.find(p=>p.id===m.pb?.p2)?.name || 'B'}</div></div>
                                                </div>
                                                <div className="mt-4 pt-4 border-t border-[#323238] flex justify-end">
-                                                   {myBet && !isEditing ? (
-                                                       <Button variant="secondary" onClick={()=>setTempBet({...tempBet, [m.id]: {sA: myBet.sA, sB: myBet.sB}})} className="text-[10px]">Alterar Palpite</Button>
-                                                   ) : (
-                                                       <Button variant="accent" onClick={()=>handleSaveBet(m.id, tempBet[m.id]?.sA, tempBet[m.id]?.sB)} disabled={!tempBet[m.id]?.sA || !tempBet[m.id]?.sB}>Gravar Palpite</Button>
-                                                   )}
+                                                   {myBet && !isEditing ? <Button variant="secondary" onClick={()=>setTempBet({...tempBet, [m.id]: {sA: myBet.sA, sB: myBet.sB}})} className="text-[10px]">Alterar Palpite</Button> : <Button variant="accent" onClick={()=>handleSaveBet(m.id, tempBet[m.id]?.sA, tempBet[m.id]?.sB)} disabled={!tempBet[m.id]?.sA || !tempBet[m.id]?.sB}>Gravar Palpite</Button>}
                                                </div>
                                            </Card>
                                        )})}
@@ -538,8 +542,49 @@ export default function TournamentApp() {
                               <Card className="p-6 border-l-2 border-red-600">
                                  <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
                                     <h3 className="font-bold text-[#E1E1E6] text-lg flex items-center gap-2 uppercase tracking-wide"><Users className="w-5 h-5 text-red-500" /> Presença & Sorteio</h3>
-                                    <div className="flex gap-2 items-center">{s.status === 'upcoming' ? (<div className="flex gap-2"><input type="date" className="bg-[#121214] border border-[#323238] text-[#E1E1E6] text-sm rounded-md px-3 py-2 outline-none focus:border-red-500" onChange={(e)=>updateStage(s.id, {nextDate:e.target.value})} /><Button onClick={() => updateStage(s.id, {status:'registration'})}>Abrir Chamada</Button></div>) : (<><select className="bg-[#121214] border border-[#323238] text-[#E1E1E6] text-sm rounded-md px-3 py-2 outline-none focus:border-red-500" value={numGroupsToDraw} onChange={(e) => setNumGroupsToDraw(parseInt(e.target.value))}><option value="1">1 Grupo</option><option value="2">2 Grupos</option><option value="3">3 Grupos</option><option value="4">4 Grupos</option></select><Button onClick={() => drawGroups(s.id)}><Shuffle className="w-4 h-4" /> Sortear Chaves</Button></>)}</div>
+                                    <div className="flex gap-2 items-center">{s.status === 'upcoming' ? (<div className="flex gap-2"><input type="date" className="bg-[#121214] border border-[#323238] text-[#E1E1E6] text-sm rounded-md px-3 py-2 outline-none focus:border-red-500" onChange={(e)=>updateStage(s.id, {nextDate:e.target.value})} /><Button onClick={() => updateStage(s.id, {status:'registration'})}>Abrir Chamada</Button></div>) : (<>
+                                       {/* CONTROLES DE SORTEIO */}
+                                       <select className="bg-[#121214] border border-[#323238] text-[#E1E1E6] text-sm rounded-md px-3 py-2 outline-none focus:border-red-500" value={numGroupsToDraw} onChange={(e) => setNumGroupsToDraw(parseInt(e.target.value))}><option value="1">1 Grupo</option><option value="2">2 Grupos</option><option value="3">3 Grupos</option><option value="4">4 Grupos</option></select>
+                                       <select className="bg-[#121214] border border-[#323238] text-[#E1E1E6] text-sm rounded-md px-3 py-2 outline-none focus:border-red-500" value={drawMode} onChange={(e) => setDrawMode(e.target.value)}>
+                                           <option value="auto">Automático</option>
+                                           <option value="manual">Manual</option>
+                                       </select>
+                                       {drawMode === 'auto' ? (
+                                           <Button onClick={() => drawGroupsAuto(s.id)}><Shuffle className="w-4 h-4" /> Sortear</Button>
+                                       ) : (
+                                           <Button variant="outline" disabled={tempPairs.length === 0} onClick={() => generateGroupsAndMatches(s.id, tempPairs)}>Gerar Grupos com {tempPairs.length} Duplas</Button>
+                                       )}
+                                    </>)}</div>
                                  </div>
+                                 
+                                 {/* MONTAGEM MANUAL (SE ATIVADA) */}
+                                 {s.status === 'registration' && drawMode === 'manual' && (
+                                     <div className="mb-6 bg-[#121214] border border-[#323238] p-4 rounded-md">
+                                         <h4 className="text-xs font-bold text-yellow-500 uppercase tracking-widest mb-3">Montar Duplas Comerciais</h4>
+                                         <div className="flex gap-2 mb-4">
+                                             <select value={manualPairing.p1} onChange={e=>setManualPairing({...manualPairing, p1: e.target.value})} className="flex-1 bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm text-[#E1E1E6] outline-none">
+                                                 <option value="">Atleta 1</option>
+                                                 {players.filter(p => (s.entries || []).find(x=>x.pid===p.id)?.play && !tempPairs.some(tp => tp.p1 === p.id || tp.p2 === p.id)).map(p => <option key={p.id} value={p.id}>{p.name} ({p.side})</option>)}
+                                             </select>
+                                             <select value={manualPairing.p2} onChange={e=>setManualPairing({...manualPairing, p2: e.target.value})} className="flex-1 bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm text-[#E1E1E6] outline-none">
+                                                 <option value="">Atleta 2</option>
+                                                 {players.filter(p => (s.entries || []).find(x=>x.pid===p.id)?.play && !tempPairs.some(tp => tp.p1 === p.id || tp.p2 === p.id)).map(p => <option key={p.id} value={p.id}>{p.name} ({p.side})</option>)}
+                                             </select>
+                                             <Button onClick={handleAddManualPair}><Plus className="w-4 h-4"/> Adicionar</Button>
+                                         </div>
+                                         <div className="flex gap-2 flex-wrap">
+                                             {tempPairs.map((tp, idx) => (
+                                                 <div key={idx} className="flex items-center gap-2 bg-[#202024] border border-[#323238] px-3 py-1.5 rounded-md text-xs font-bold">
+                                                     <span className="text-[#E1E1E6]">{players.find(x=>x.id===tp.p1)?.name}</span> <span className="text-[#8D8D99]">/</span> <span className="text-[#E1E1E6]">{players.find(x=>x.id===tp.p2)?.name}</span>
+                                                     <button onClick={()=>setTempPairs(tempPairs.filter(x=>x.id!==tp.id))} className="ml-2 text-red-500 hover:text-red-400"><Trash2 className="w-3 h-3"/></button>
+                                                 </div>
+                                             ))}
+                                             {tempPairs.length === 0 && <span className="text-xs text-[#8D8D99]">Nenhuma dupla formada ainda.</span>}
+                                         </div>
+                                     </div>
+                                 )}
+
+                                 {/* LISTA DE PRESENÇA */}
                                  {s.status === 'registration' && (<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{players.map(p => { const c = (s.confirmed || []).includes(p.id); const e = (s.entries || []).find(x=>x.pid===p.id); return <div key={p.id} className={`p-4 border rounded-md cursor-pointer transition-colors ${c ? 'bg-red-500/10 border-red-500/30' : 'bg-[#121214] border-[#323238] hover:border-[#8D8D99]'}`} onClick={()=>toggleCheckin(s.id, p.id)}><div className="flex justify-between items-center"><span className={`font-bold text-sm uppercase ${c?'text-red-500':'text-[#8D8D99]'}`}>{p.name}</span><Badge color={p.side==='R'?'blue':'green'}>{p.side}</Badge></div>{c && <div className="flex gap-2 mt-4 items-center pt-4 border-t border-[#323238]"><button onClick={(ev)=>{ev.stopPropagation(); toggleEntryProp(s.id, p.id, 'paid')}} className={`flex-1 py-1.5 rounded text-[10px] font-bold uppercase transition-colors ${e?.paid?'bg-[#04D361] text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Pago</button><button onClick={(ev)=>{ev.stopPropagation(); toggleEntryProp(s.id, p.id, 'drink')}} className={`px-4 py-1.5 rounded transition-colors ${e?.drink?'bg-yellow-500 text-[#121214]':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}><Beer className="w-3.5 h-3.5"/></button><div onClick={ev=>{ev.stopPropagation();toggleEntryProp(s.id, p.id, 'play')}} className={`flex-1 py-1.5 rounded text-[10px] font-bold uppercase text-center transition-colors ${e?.play?'bg-blue-600 text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Joga</div></div>}</div> })}</div>)}
                               </Card>
                            )}
@@ -614,8 +659,38 @@ export default function TournamentApp() {
                <div className="space-y-6 animate-in fade-in duration-200">
                   <Card className="p-6">
                      <div className="flex justify-between mb-6 items-center"><h3 className="font-bold text-[#E1E1E6] text-lg">Elenco Registrado</h3>{isAdmin && !showAddPlayerForm && <Button onClick={() => setShowAddPlayerForm(true)}><Plus className="w-4 h-4"/> Novo Atleta</Button>}</div>
-                     {showAddPlayerForm && (<div className="bg-[#121214] p-6 rounded-md mb-6 border border-[#323238] max-w-lg"><h4 className="text-xs font-bold text-[#8D8D99] uppercase tracking-widest mb-4">Dados do Jogador</h4><input className="w-full bg-[#202024] border border-[#323238] rounded-md p-3 mb-4 text-sm text-[#E1E1E6] focus:border-red-500 outline-none" placeholder="Nome Completo" value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} /><div className="flex gap-3 mb-6"><select className="bg-[#202024] border border-[#323238] rounded-md p-3 text-sm flex-1 text-[#E1E1E6] focus:border-red-500 outline-none" value={newPlayerSide} onChange={e => setNewPlayerSide(e.target.value)}><option value="R">Lado Direito (R)</option><option value="L">Lado Esquerdo (L)</option></select></div><div className="flex gap-3"><Button onClick={handleAddPlayer} className="flex-1" variant="success">Cadastrar</Button><Button variant="secondary" onClick={() => setShowAddPlayerForm(false)}>Cancelar</Button></div></div>)}
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">{players.map(p => (<div key={p.id} className="p-4 bg-[#121214] border border-[#323238] rounded-md">{editingPlayerId === p.id ? (<div className="space-y-4"><input className="w-full bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm text-[#E1E1E6] outline-none" value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} /><div className="flex gap-3"><select className="bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm flex-1 text-[#E1E1E6] outline-none" value={editForm.side} onChange={e=>setEditForm({...editForm, side: e.target.value})}><option value="R">Direito (R)</option><option value="L">Esquerdo (L)</option></select></div><div className="flex items-center justify-between bg-[#202024] px-4 py-2 rounded-md border border-[#323238]"><label className="text-xs font-bold text-[#8D8D99] uppercase tracking-wider">Bônus Ranking:</label><input type="number" className="w-16 bg-[#121214] border border-[#323238] rounded px-2 py-1 text-sm text-yellow-500 font-bold text-center outline-none" value={editForm.manualPts} onChange={e=>setEditForm({...editForm, manualPts: e.target.value})} /></div><div className="flex gap-2 pt-2"><Button variant="success" className="flex-1" onClick={() => savePlayerEdit(p.id)}>Salvar</Button><Button variant="secondary" onClick={() => setEditingPlayerId(null)}>Voltar</Button></div></div>) : (<div className="flex justify-between items-center"><div><div className="font-bold text-[#E1E1E6] text-base uppercase">{p.name}</div><div className="text-[10px] flex flex-wrap gap-x-3 gap-y-2 items-center mt-2"><Badge color={p.side === 'R' ? 'blue' : 'green'}>{p.side === 'R' ? 'Direito' : 'Esquerdo'}</Badge>{p.manualPts > 0 && <span className="text-yellow-500 font-bold">+{p.manualPts} PTS REGISTRO</span>}</div></div>{isAdmin && <div className="flex gap-2"><Button variant="secondary" onClick={() => { setEditingPlayerId(p.id); setEditForm({name: p.name, side: p.side, uniformPaid: p.uniformPaid, manualPts: p.manualPts || 0}); }} className="px-3 py-2"><Edit2 className="w-4 h-4"/></Button><Button variant="danger" onClick={()=>removePlayer(p.id)} className="px-3 py-2"><Trash2 className="w-4 h-4"/></Button></div>}</div>)}</div>))}</div>{players.length === 0 && <p className="text-center text-sm text-[#8D8D99] py-8">Nenhum atleta na lista.</p>}</Card>
+                     
+                     {/* FORMULÁRIO DE NOVO ATLETA (COM SENHA) */}
+                     {showAddPlayerForm && (
+                        <div className="bg-[#121214] p-6 rounded-md mb-6 border border-[#323238] max-w-lg">
+                            <h4 className="text-xs font-bold text-[#8D8D99] uppercase tracking-widest mb-4">Dados do Jogador</h4>
+                            <input className="w-full bg-[#202024] border border-[#323238] rounded-md p-3 mb-4 text-sm text-[#E1E1E6] focus:border-red-500 outline-none" placeholder="Nome Completo" value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} />
+                            <div className="flex gap-3 mb-4">
+                                <select className="bg-[#202024] border border-[#323238] rounded-md p-3 text-sm flex-1 text-[#E1E1E6] focus:border-red-500 outline-none" value={newPlayerSide} onChange={e => setNewPlayerSide(e.target.value)}><option value="R">Lado Direito (R)</option><option value="L">Lado Esquerdo (L)</option></select>
+                                <input className="w-full bg-[#202024] border border-[#323238] rounded-md p-3 text-sm text-[#E1E1E6] focus:border-red-500 outline-none flex-1" placeholder="Senha da Bet (Opcional)" value={newPlayerPassword} onChange={e => setNewPlayerPassword(e.target.value)} />
+                            </div>
+                            <div className="flex gap-3"><Button onClick={handleAddPlayer} className="flex-1" variant="success">Cadastrar</Button><Button variant="secondary" onClick={() => setShowAddPlayerForm(false)}>Cancelar</Button></div>
+                        </div>
+                     )}
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">{players.map(p => (<div key={p.id} className="p-4 bg-[#121214] border border-[#323238] rounded-md">{editingPlayerId === p.id ? (
+                         // FORMULÁRIO DE EDIÇÃO (COM PONTOS HISTÓRICOS E SENHA)
+                         <div className="space-y-4">
+                            <input className="w-full bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm text-[#E1E1E6] outline-none" value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} />
+                            <div className="flex gap-3">
+                                <select className="bg-[#202024] border border-[#323238] rounded-md px-3 py-2 text-sm flex-1 text-[#E1E1E6] outline-none" value={editForm.side} onChange={e=>setEditForm({...editForm, side: e.target.value})}><option value="R">Direito (R)</option><option value="L">Esquerdo (L)</option></select>
+                            </div>
+                            <div className="flex items-center justify-between bg-[#202024] px-4 py-2 rounded-md border border-[#323238]"><label className="text-xs font-bold text-[#8D8D99] uppercase tracking-wider">Pontos Jan-Jun (Histórico):</label><input type="number" className="w-16 bg-[#121214] border border-[#323238] rounded px-2 py-1 text-sm text-yellow-500 font-bold text-center outline-none" value={editForm.manualPts} onChange={e=>setEditForm({...editForm, manualPts: e.target.value})} /></div>
+                            <div className="flex items-center justify-between bg-[#202024] px-4 py-2 rounded-md border border-[#323238]"><label className="text-xs font-bold text-[#8D8D99] uppercase tracking-wider flex items-center gap-2"><Lock className="w-3 h-3"/> Senha (SMI Bet):</label><input type="text" className="w-24 bg-[#121214] border border-[#323238] rounded px-2 py-1 text-sm text-[#E1E1E6] text-center outline-none" placeholder="123" value={editForm.password} onChange={e=>setEditForm({...editForm, password: e.target.value})} /></div>
+                            <div className="flex gap-2 pt-2"><Button variant="success" className="flex-1" onClick={() => savePlayerEdit(p.id)}>Salvar</Button><Button variant="secondary" onClick={() => setEditingPlayerId(null)}>Voltar</Button></div>
+                         </div>
+                     ) : (
+                         <div className="flex justify-between items-center">
+                            <div><div className="font-bold text-[#E1E1E6] text-base uppercase">{p.name}</div><div className="text-[10px] flex flex-wrap gap-x-3 gap-y-2 items-center mt-2"><Badge color={p.side === 'R' ? 'blue' : 'green'}>{p.side === 'R' ? 'Direito' : 'Esquerdo'}</Badge>{p.manualPts > 0 && <span className="text-yellow-500 font-bold">+{p.manualPts} PTS HISTÓRICO</span>}</div></div>
+                            {isAdmin && <div className="flex gap-2"><Button variant="secondary" onClick={() => { setEditingPlayerId(p.id); setEditForm({name: p.name, side: p.side, uniformPaid: p.uniformPaid, manualPts: p.manualPts || 0, password: p.password || ''}); }} className="px-3 py-2"><Settings className="w-4 h-4"/></Button><Button variant="danger" onClick={()=>removePlayer(p.id)} className="px-3 py-2"><Trash2 className="w-4 h-4"/></Button></div>}
+                         </div>
+                     )}</div>))}</div>{players.length === 0 && <p className="text-center text-sm text-[#8D8D99] py-8">Nenhum atleta na lista.</p>}
+                  </Card>
                </div>
             )}
 
@@ -651,7 +726,6 @@ export default function TournamentApp() {
                            <input type="password" id="global-pwd" placeholder="Senha de acesso" className="w-full bg-[#121214] border border-[#323238] text-[#E1E1E6] rounded-md px-4 py-3 text-center text-sm tracking-widest outline-none focus:border-red-500 transition-colors" />
                            <Button type="submit">Entrar no Sistema</Button>
                      </form>
-                     {isAdmin && <div className="mt-8 pt-6 border-t border-[#323238]"><button onClick={async ()=>{if(window.confirm('CUIDADO EXTREMO! Isso limpará TODOS OS DADOS na nuvem. Continuar?')){ await syncPlayers([]); await syncTrans([]); await syncBets([]); await syncStages(MONTHS.map((m, i) => ({ id: i+1, name: m, status: 'upcoming', nextDate: "", q2Available: true, confirmed: [], entries: [], pairs: [], groups: [], matches: [], penalties: [], tv: { q1: null, q2: null } }))); window.location.reload(); }}} className="text-[10px] font-bold text-red-500 uppercase hover:underline">Zerar Banco de Dados</button></div>}
                   </div>
                </div>
             )}
