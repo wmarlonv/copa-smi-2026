@@ -168,7 +168,7 @@ export default function TournamentApp() {
       });
       return { ...p, pts, j, pf, ps, s: pf-ps, v };
     });
-    return raw.sort((a,b) => b.v - a.v || b.s - a.s || b.pf - a.pf || a.ps - b.ps);
+    return raw.sort((a,b) => b.pts - a.pts || b.v - a.v || b.s - a.s || b.pf - a.pf || a.ps - b.ps);
   }, [players, stages]);
 
   const betRanking = useMemo(() => {
