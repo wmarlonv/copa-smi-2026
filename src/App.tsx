@@ -9,12 +9,12 @@ import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { db } from "./firebase"; 
 
 // ============================================================================
-// 1. CONFIGURAÇÕES BASE
+// 1. CONFIGURAÇÕES BASE & UTILITÁRIOS
 // ============================================================================
 
 const BRAND = {
   name: "Copa SMI 2026",
-  logo: "/favicon.ico", // Aproveitando o ícone novo
+  logo: "/favicon.ico",
   arenaLogo: "/ARENA.png",
   arenaLink: "https://www.instagram.com/arenaultrarp/",
   sponsors: [
@@ -33,6 +33,9 @@ const DRINK_PRICE = 30;
 
 const INITIAL_PLAYERS = [];
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+// Helper para pegar apenas o primeiro nome e evitar quebra de layout
+const getShortName = (name) => name ? name.split(' ')[0] : '?';
 
 // ============================================================================
 // 2. COMPONENTES REUTILIZÁVEIS
@@ -92,7 +95,7 @@ export default function TournamentApp() {
 
   // Etapas / Sorteio / Manual
   const [numGroupsToDraw, setNumGroupsToDraw] = useState(2);
-  const [drawMode, setDrawMode] = useState('auto'); // auto ou manual
+  const [drawMode, setDrawMode] = useState('auto');
   const [manualPairing, setManualPairing] = useState({ p1: '', p2: '' });
   const [tempPairs, setTempPairs] = useState([]);
   
@@ -225,14 +228,11 @@ export default function TournamentApp() {
   };
   const handleLogout = () => { setIsAdmin(false); if (activeTab === 'financial_hub') setActiveTab('dashboard'); };
 
-  // Login da Bet Validando a Senha do Atleta
   const handleBetLogin = (e) => {
       e.preventDefault();
       if (!betLoginId) return alert("Selecione seu nome.");
-      
       const atleta = players.find(p => p.id === Number(betLoginId));
-      const senhaCorreta = atleta?.password || "123"; // Se não tem senha, a padrão é 123
-      
+      const senhaCorreta = atleta?.password || "123";
       if (betPassword === senhaCorreta || betPassword === ADMIN_PASSWORD) { 
           setLoggedBettorId(Number(betLoginId)); 
           setBetPassword(""); 
@@ -249,7 +249,6 @@ export default function TournamentApp() {
       setTempBet({...tempBet, [mid]: undefined}); 
   };
 
-  // Gestão de Atletas
   const savePlayerEdit = (pid) => { syncPlayers(players.map(p => p.id === pid ? { ...p, ...editForm, manualPts: Number(editForm.manualPts) || 0 } : p)); setEditingPlayerId(null); };
   const handleAddPlayer = () => { if(newPlayerName) { syncPlayers([...players, {id:Date.now(), name:newPlayerName, side:newPlayerSide, password:newPlayerPassword, uniformPaid:false, manualPts: 0}]); setShowAddPlayerForm(false); setNewPlayerName(""); setNewPlayerPassword(""); }};
   const removePlayer = (pid) => { if(window.confirm("Remover atleta?")) syncPlayers(players.filter(p=>p.id!==pid)); };
@@ -259,7 +258,6 @@ export default function TournamentApp() {
   
   const redoDraw = (sid) => { if(window.confirm("Isso apagará jogos e apostas da etapa. Confirmar?")) { updateStage(sid, { status: 'registration', pairs: [], groups: [], matches: [], tv: { q1: null, q2: null } }); setTempPairs([]); } };
   
-  // Função que pega uma lista de Duplas e transforma em Grupos e Jogos
   const generateGroupsAndMatches = (sid, finalPairs) => {
       const groups = Array.from({length:numGroupsToDraw}, (_,i)=>({id:i+1, name:`Grupo ${String.fromCharCode(65+i)}`, pairs:[]}));
       finalPairs.forEach((p,i)=> { groups[i%numGroupsToDraw].pairs.push(p); p.g=groups[i%numGroupsToDraw].id; });
@@ -271,7 +269,6 @@ export default function TournamentApp() {
       setTempPairs([]);
   };
 
-  // Sorteio Automático
   const drawGroupsAuto = (sid) => {
       const s = stages.find(x=>x.id===sid); const playingIds = s.entries.filter(e=>e.play).map(e=>e.pid); const pool = players.filter(p=>s.confirmed.includes(p.id) && playingIds.includes(p.id));
       if(pool.length < 2) return alert("Mínimo 2 jogadores.");
@@ -283,7 +280,6 @@ export default function TournamentApp() {
       generateGroupsAndMatches(sid, autoPairs);
   };
 
-  // Montagem Manual (Adiciona dupla temporária)
   const handleAddManualPair = () => {
       if(!manualPairing.p1 || !manualPairing.p2 || manualPairing.p1 === manualPairing.p2) return alert("Selecione dois atletas diferentes.");
       setTempPairs([...tempPairs, { id: tempPairs.length + 1, p1: Number(manualPairing.p1), p2: Number(manualPairing.p2), pts: 0 }]);
@@ -351,7 +347,13 @@ export default function TournamentApp() {
                     </tr>
                 ))}</tbody>
               </table></div>
-            <div className="bg-[#121214] p-4 flex justify-between items-center border-t border-[#323238]"><div className="flex gap-3 grayscale opacity-50">{BRAND.sponsors.slice(0,3).map((s,i)=><img key={i} src={s.url} alt="Sponsor" className="h-4 object-contain" />)}</div><img src={BRAND.arenaLogo} alt="Arena" className="h-6 grayscale opacity-50"/></div>
+            {/* CORREÇÃO AQUI: flex-wrap + justify-center e map completo */}
+            <div className="bg-[#121214] p-4 flex flex-col items-center gap-4 border-t border-[#323238]">
+                <div className="flex flex-wrap justify-center gap-3 grayscale opacity-50">
+                    {BRAND.sponsors.map((s,i)=><img key={i} src={s.url} alt="Sponsor" className="h-4 object-contain" />)}
+                </div>
+                <img src={BRAND.arenaLogo} alt="Arena" className="h-6 grayscale opacity-50"/>
+            </div>
           </div>
           <button onClick={()=>setShareMode(false)} className="fixed bottom-6 right-6 bg-[#202024] border border-[#323238] text-[#E1E1E6] px-6 py-3 rounded-md font-bold shadow-lg flex items-center gap-2 hover:bg-[#29292E] transition-all"><ArrowLeft className="w-4 h-4"/> Voltar</button>
         </div>
@@ -376,9 +378,9 @@ export default function TournamentApp() {
                           <Card key={idx} className="h-full flex flex-col justify-center items-center p-6 relative overflow-hidden bg-[#202024]">
                                <div className="absolute top-4 left-4 text-xs uppercase text-[#8D8D99] font-bold tracking-widest">{m?.stage}</div>
                                <div className="flex w-full h-full justify-between items-center gap-4">
-                                   <div className="flex-1 text-center space-y-2"><div className="text-4xl font-black text-[#E1E1E6] truncate uppercase">{players.find(p=>p.id===m?.pa?.p1)?.name || 'Dupla'}</div><div className="text-2xl font-bold text-[#8D8D99] truncate uppercase">{players.find(p=>p.id===m?.pa?.p2)?.name || 'A'}</div></div>
-                                   <div className="px-6 text-8xl font-black text-yellow-500 tabular-nums">{m?.sA || 0}<span className="text-[#323238] text-6xl mx-4">:</span>{m?.sB || 0}</div>
-                                   <div className="flex-1 text-center space-y-2"><div className="text-4xl font-black text-[#E1E1E6] truncate uppercase">{players.find(p=>p.id===m?.pb?.p1)?.name || 'Dupla'}</div><div className="text-2xl font-bold text-[#8D8D99] truncate uppercase">{players.find(p=>p.id===m?.pb?.p2)?.name || 'B'}</div></div>
+                                   <div className="flex-1 text-center space-y-2 w-1/3"><div className="text-3xl md:text-4xl font-black text-[#E1E1E6] truncate uppercase">{getShortName(players.find(p=>p.id===m?.pa?.p1)?.name)}</div><div className="text-xl md:text-2xl font-bold text-[#8D8D99] truncate uppercase">{getShortName(players.find(p=>p.id===m?.pa?.p2)?.name)}</div></div>
+                                   <div className="px-4 text-6xl md:text-8xl font-black text-yellow-500 tabular-nums shrink-0">{m?.sA || 0}<span className="text-[#323238] text-4xl md:text-6xl mx-2 md:mx-4">:</span>{m?.sB || 0}</div>
+                                   <div className="flex-1 text-center space-y-2 w-1/3"><div className="text-3xl md:text-4xl font-black text-[#E1E1E6] truncate uppercase">{getShortName(players.find(p=>p.id===m?.pb?.p1)?.name)}</div><div className="text-xl md:text-2xl font-bold text-[#8D8D99] truncate uppercase">{getShortName(players.find(p=>p.id===m?.pb?.p2)?.name)}</div></div>
                                </div>
                           </Card>
                       )
@@ -389,11 +391,12 @@ export default function TournamentApp() {
                       <div className="flex w-full h-full gap-4">
                           <div className="flex-1 border-r border-[#323238] pr-4">
                               <div className="text-xs font-bold text-[#04D361] mb-2 uppercase tracking-widest">Classificados (Top 4)</div>
-                              <table className="w-full text-left text-xs text-[#C4C4CC]"><thead className="text-[#8D8D99] uppercase"><tr><th className="pb-2">Dupla</th><th className="pb-2 text-center">V</th><th className="pb-2 text-center">S</th><th className="pb-2 text-center">PF</th></tr></thead><tbody className="divide-y divide-[#323238]">{stageRank.slice(0,4).map(r=><tr key={r.id}><td className="py-2 text-[#E1E1E6] font-bold">D{r.id}</td><td className="text-center text-[#04D361] font-bold">{r.v}</td><td className="text-center">{r.s}</td><td className="text-center">{r.pf}</td></tr>)}</tbody></table>
+                              {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
+                              <table className="w-full text-left text-xs text-[#C4C4CC]"><thead className="text-[#8D8D99] uppercase"><tr><th className="pb-2">Dupla</th><th className="pb-2 text-center">V</th><th className="pb-2 text-center">S</th><th className="pb-2 text-center">PF</th></tr></thead><tbody className="divide-y divide-[#323238]">{stageRank.slice(0,4).map(r=><tr key={r.id}><td className="py-2 text-[#E1E1E6] font-bold truncate max-w-[150px]">{getShortName(players.find(x=>x.id===r.p1)?.name)} / {getShortName(players.find(x=>x.id===r.p2)?.name)}</td><td className="text-center text-[#04D361] font-bold">{r.v}</td><td className="text-center">{r.s}</td><td className="text-center">{r.pf}</td></tr>)}</tbody></table>
                           </div>
                           <div className="flex-1 pl-4">
                               <div className="text-xs font-bold text-[#8D8D99] mb-2 uppercase tracking-widest">Aguardando / Eliminados</div>
-                              <table className="w-full text-left text-xs text-[#8D8D99]"><thead className="uppercase"><tr><th className="pb-2">Dupla</th><th className="pb-2 text-center">V</th><th className="pb-2 text-center">S</th><th className="pb-2 text-center">PF</th></tr></thead><tbody className="divide-y divide-[#323238]/50">{stageRank.slice(4,8).map(r=><tr key={r.id}><td className="py-2 font-bold">D{r.id}</td><td className="text-center">{r.v}</td><td className="text-center">{r.s}</td><td className="text-center">{r.pf}</td></tr>)}</tbody></table>
+                              <table className="w-full text-left text-xs text-[#8D8D99]"><thead className="uppercase"><tr><th className="pb-2">Dupla</th><th className="pb-2 text-center">V</th><th className="pb-2 text-center">S</th><th className="pb-2 text-center">PF</th></tr></thead><tbody className="divide-y divide-[#323238]/50">{stageRank.slice(4,8).map(r=><tr key={r.id}><td className="py-2 font-bold truncate max-w-[150px]">{getShortName(players.find(x=>x.id===r.p1)?.name)} / {getShortName(players.find(x=>x.id===r.p2)?.name)}</td><td className="text-center">{r.v}</td><td className="text-center">{r.s}</td><td className="text-center">{r.pf}</td></tr>)}</tbody></table>
                           </div>
                       </div>
                   </Card>
@@ -494,13 +497,13 @@ export default function TournamentApp() {
                                            <Card key={m.id} className="p-4 border-l-2 border-l-[#323238] hover:border-l-yellow-500 transition-colors">
                                                <div className="flex justify-between items-center mb-4 border-b border-[#323238] pb-2"><Badge color="gray">{m.stage}</Badge>{myBet && !isEditing && <Badge color="green"><CheckCircle className="w-3 h-3 inline mr-1"/>Palpite Salvo</Badge>}</div>
                                                <div className="flex justify-between items-center gap-4">
-                                                   <div className="text-center flex-1"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{players.find(p=>p.id===m.pa?.p1)?.name || 'D?'}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{players.find(p=>p.id===m.pa?.p2)?.name || 'A'}</div></div>
-                                                   <div className="flex items-center gap-2">
+                                                   <div className="text-center flex-1 overflow-hidden w-1/3"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{getShortName(players.find(p=>p.id===m.pa?.p1)?.name)}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{getShortName(players.find(p=>p.id===m.pa?.p2)?.name)}</div></div>
+                                                   <div className="flex items-center gap-2 shrink-0">
                                                        <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sAToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:e.target.value, sB:tempBet[m.id]?.sB||''}})} />
                                                        <span className="text-[#8D8D99] font-bold">x</span>
                                                        <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sBToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:tempBet[m.id]?.sA||'', sB:e.target.value}})} />
                                                    </div>
-                                                   <div className="text-center flex-1"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{players.find(p=>p.id===m.pb?.p1)?.name || 'D?'}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{players.find(p=>p.id===m.pb?.p2)?.name || 'B'}</div></div>
+                                                   <div className="text-center flex-1 overflow-hidden w-1/3"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{getShortName(players.find(p=>p.id===m.pb?.p1)?.name)}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{getShortName(players.find(p=>p.id===m.pb?.p2)?.name)}</div></div>
                                                </div>
                                                <div className="mt-4 pt-4 border-t border-[#323238] flex justify-end">
                                                    {myBet && !isEditing ? <Button variant="secondary" onClick={()=>setTempBet({...tempBet, [m.id]: {sA: myBet.sA, sB: myBet.sB}})} className="text-[10px]">Alterar Palpite</Button> : <Button variant="accent" onClick={()=>handleSaveBet(m.id, tempBet[m.id]?.sA, tempBet[m.id]?.sB)} disabled={!tempBet[m.id]?.sA || !tempBet[m.id]?.sB}>Gravar Palpite</Button>}
@@ -591,7 +594,7 @@ export default function TournamentApp() {
 
                            {(s.status === 'active' || s.status === 'finished') && (
                               <div className="space-y-6">
-                                 <Card className="p-6"><div className="mb-4 text-[#8D8D99] font-bold text-xs uppercase tracking-wider">Duplas Formadas</div><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">{(s.pairs || [])?.map(p=><div key={p.id} className="bg-[#121214] p-3 rounded-md flex justify-between items-center border border-[#323238]"><span className="font-bold text-[#8D8D99] text-xs">D{p.id}</span><div className="text-right truncate flex-1"><div className="text-[#E1E1E6] font-bold text-xs uppercase truncate">{players.find(x=>x.id===p.p1)?.name}</div><div className="text-[#8D8D99] font-bold text-[10px] uppercase truncate">{players.find(x=>x.id===p.p2)?.name}</div></div></div>)}</div></Card>
+                                 <Card className="p-6"><div className="mb-4 text-[#8D8D99] font-bold text-xs uppercase tracking-wider">Duplas Formadas</div><div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">{(s.pairs || [])?.map(p=><div key={p.id} className="bg-[#121214] p-3 rounded-md flex justify-between items-center border border-[#323238]"><span className="font-bold text-[#8D8D99] text-xs">D{p.id}</span><div className="text-right truncate flex-1"><div className="text-[#E1E1E6] font-bold text-xs uppercase truncate">{getShortName(players.find(x=>x.id===p.p1)?.name)}</div><div className="text-[#8D8D99] font-bold text-[10px] uppercase truncate">{getShortName(players.find(x=>x.id===p.p2)?.name)}</div></div></div>)}</div></Card>
                                  <Card className="p-6">
                                     <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-[#E1E1E6] text-sm uppercase tracking-wider">Fase de Grupos</h3>{isAdmin && !s.matches?.find(m=>m.stage==='qf') && <Button variant="outline" onClick={()=>genMataMata(s.id)}>Gerar Mata-Mata</Button>}</div>
                                     <div className="grid md:grid-cols-2 gap-6">
@@ -610,15 +613,17 @@ export default function TournamentApp() {
                                           <div key={g.id} className="bg-[#121214] rounded-md border border-[#323238] overflow-hidden">
                                              <div className="bg-[#29292E] px-4 py-2 text-xs font-bold text-[#E1E1E6] uppercase tracking-widest border-b border-[#323238]">{g.name}</div>
                                              <table className="w-full text-center text-xs text-[#C4C4CC] mb-2">
-                                                   <thead className="text-[#8D8D99] font-medium uppercase border-b border-[#323238]/50"><tr><th className="py-3 px-1 text-left pl-4 font-medium">Dupla</th><th className="font-medium">V</th><th className="font-medium">S</th><th className="font-medium">PF</th><th className="font-medium">PS</th></tr></thead>
-                                                   <tbody className="divide-y divide-[#323238]/50">{stats.map(row=>(<tr key={row.id} className="hover:bg-[#202024]"><td className="py-2.5 px-1 text-left pl-4 font-bold text-[#E1E1E6]">D{row.id}</td><td className="font-bold text-[#04D361]">{row.v}</td><td className="font-bold text-blue-400">{row.s}</td><td>{row.pro}</td><td>{row.contra}</td></tr>))}</tbody>
+                                                 <thead className="text-[#8D8D99] font-medium uppercase border-b border-[#323238]/50"><tr><th className="py-3 px-1 text-left pl-4 font-medium">Dupla</th><th className="font-medium">V</th><th className="font-medium">S</th><th className="font-medium">PF</th><th className="font-medium">PS</th></tr></thead>
+                                                 {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
+                                                 <tbody className="divide-y divide-[#323238]/50">{stats.map(row=>(<tr key={row.id} className="hover:bg-[#202024]"><td className="py-2.5 px-1 text-left pl-4 font-bold text-[#E1E1E6] truncate max-w-[120px]">{getShortName(players.find(x=>x.id===row.p1)?.name)} / {getShortName(players.find(x=>x.id===row.p2)?.name)}</td><td className="font-bold text-[#04D361]">{row.v}</td><td className="font-bold text-blue-400">{row.s}</td><td>{row.pro}</td><td>{row.contra}</td></tr>))}</tbody>
                                              </table>
                                              <div className="p-2 bg-[#202024] font-bold text-[10px] text-center text-[#8D8D99] uppercase tracking-widest border-y border-[#323238]">Confrontos</div>
                                              <div className="divide-y divide-[#323238]/50">{(s.matches || [])?.filter(m=>m.gId===g.id).map(m => (
                                                    <div key={m.id} className="p-4 flex justify-between items-center text-sm text-[#E1E1E6] hover:bg-[#202024] transition-colors">
-                                                      <span className="w-8 font-bold text-[#8D8D99]">D{m.pa?.id}</span>
+                                                      {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
+                                                      <span className="w-24 truncate font-bold text-[#8D8D99] text-[11px] uppercase text-right">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span>
                                                       <div className="flex gap-2 items-center"><input type="number" disabled={!isAdmin} className={`w-10 h-10 text-center rounded-md font-bold text-base ${isAdmin?'bg-[#202024] border border-[#323238] focus:border-red-500 outline-none':'bg-transparent border-transparent'}`} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/><span className="text-[#8D8D99] font-bold">x</span><input type="number" disabled={!isAdmin} className={`w-10 h-10 text-center rounded-md font-bold text-base ${isAdmin?'bg-[#202024] border border-[#323238] focus:border-red-500 outline-none':'bg-transparent border-transparent'}`} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="text-[#04D361] ml-2 p-2 rounded hover:bg-[#04D361]/10 transition-colors"><CheckCircle className="w-5 h-5"/></button>}</div>
-                                                      <span className="w-8 text-right font-bold text-[#8D8D99]">D{m.pb?.id}</span>
+                                                      <span className="w-24 truncate font-bold text-[#8D8D99] text-[11px] uppercase text-left">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span>
                                                       {isAdmin && <div className="flex gap-1 ml-4"><button onClick={()=>updateStage(s.id,{tv:{...(s.tv || {}), q1:m.id}})} className={`w-7 h-7 text-[9px] font-bold rounded flex items-center justify-center transition-colors ${s.tv?.q1===m.id?'bg-red-600 text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Q1</button>{s.q2Available && <button onClick={()=>updateStage(s.id,{tv:{...(s.tv || {}), q2:m.id}})} className={`w-7 h-7 text-[9px] font-bold rounded flex items-center justify-center transition-colors ${s.tv?.q2===m.id?'bg-red-600 text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Q2</button>}</div>}
                                                    </div>
                                              ))}</div>
@@ -632,9 +637,9 @@ export default function TournamentApp() {
                                     <div className="mt-8 pt-8 border-t border-[#323238]">
                                        <h3 className="font-bold text-center text-yellow-500 mb-6 uppercase tracking-widest text-sm">Fase Final (Mata-Mata)</h3>
                                        <div className="overflow-x-auto pb-4"><div className="flex justify-center gap-6 min-w-[600px]">
-                                          <div className="w-40 space-y-4"><div className="text-center text-[10px] text-[#8D8D99] uppercase font-bold tracking-widest mb-4">Quartas</div>{(s.matches || []).filter(m=>m.stage==='qf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-[#323238] shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99]">D{m.pa?.id}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99]">D{m.pb?.id}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && !s.matches.find(m=>m.stage==='sf') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'qf')}>Montar Semi</Button>}</div>
-                                          <div className="w-40 space-y-8 pt-8"><div className="text-center text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-4">Semi-Final</div>{(s.matches || []).filter(m=>m.stage==='sf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-blue-500/30 shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99]">D{m.pa?.id}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99]">D{m.pb?.id}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && s.matches.find(m=>m.stage==='sf') && !s.matches.find(m=>m.stage==='final') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'sf')}>Montar Final</Button>}</div>
-                                          <div className="w-48 space-y-6 pt-16"><div className="text-center text-[10px] text-yellow-500 uppercase font-bold tracking-widest mb-4">Grande Final</div>{(s.matches || []).filter(m=>m.stage==='final').map(m=>(<div key={m.id} className="bg-[#202024] border border-yellow-500/50 p-5 rounded-md text-sm shadow-md"><div className="flex justify-between items-center mb-4"><span className="font-black text-[#E1E1E6]">D{m.pa?.id}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-black text-[#E1E1E6]">D{m.pb?.id}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <Button className="w-full mt-5 bg-yellow-500 hover:bg-yellow-600 text-[#121214]" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar Decisão</Button>}</div>))}{(s.matches || []).filter(m=>m.stage==='3rd').map(m=>(<div key={m.id} className="mt-8 pt-6 border-t border-[#323238] text-center"><div className="text-[10px] text-[#8D8D99] mb-3 uppercase font-bold tracking-widest">3º Lugar</div><div className="bg-[#121214] p-3 rounded-md flex justify-between items-center border border-[#323238]"><span className="font-bold text-[#8D8D99]">D{m.pa?.id}</span><div className="flex gap-2 items-center"><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/> <span className="text-[10px] text-[#8D8D99]">x</span> <input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><span className="font-bold text-[#8D8D99]">D{m.pb?.id}</span></div>{isAdmin && !m.f && <Button variant="secondary" className="w-full mt-3" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar 3º</Button>}</div>))}</div>
+                                          <div className="w-40 space-y-4"><div className="text-center text-[10px] text-[#8D8D99] uppercase font-bold tracking-widest mb-4">Quartas</div>{(s.matches || []).filter(m=>m.stage==='qf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-[#323238] shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && !s.matches.find(m=>m.stage==='sf') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'qf')}>Montar Semi</Button>}</div>
+                                          <div className="w-40 space-y-8 pt-8"><div className="text-center text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-4">Semi-Final</div>{(s.matches || []).filter(m=>m.stage==='sf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-blue-500/30 shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && s.matches.find(m=>m.stage==='sf') && !s.matches.find(m=>m.stage==='final') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'sf')}>Montar Final</Button>}</div>
+                                          <div className="w-48 space-y-6 pt-16"><div className="text-center text-[10px] text-yellow-500 uppercase font-bold tracking-widest mb-4">Grande Final</div>{(s.matches || []).filter(m=>m.stage==='final').map(m=>(<div key={m.id} className="bg-[#202024] border border-yellow-500/50 p-5 rounded-md text-sm shadow-md"><div className="flex justify-between items-center mb-4"><span className="font-black text-[#E1E1E6] truncate max-w-[100px] text-xs uppercase">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)} /<br/>{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-black text-[#E1E1E6] truncate max-w-[100px] text-xs uppercase">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)} /<br/>{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <Button className="w-full mt-5 bg-yellow-500 hover:bg-yellow-600 text-[#121214]" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar Decisão</Button>}</div>))}{(s.matches || []).filter(m=>m.stage==='3rd').map(m=>(<div key={m.id} className="mt-8 pt-6 border-t border-[#323238] text-center"><div className="text-[10px] text-[#8D8D99] mb-3 uppercase font-bold tracking-widest">3º Lugar</div><div className="bg-[#121214] p-3 rounded-md flex justify-between items-center border border-[#323238]"><span className="font-bold text-[#8D8D99] truncate w-16 text-left">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><div className="flex gap-2 items-center shrink-0"><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/> <span className="text-[10px] text-[#8D8D99]">x</span> <input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><span className="font-bold text-[#8D8D99] truncate w-16 text-right">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span></div>{isAdmin && !m.f && <Button variant="secondary" className="w-full mt-3" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar 3º</Button>}</div>))}</div>
                                        </div></div>
                                     </div>
                                  )}
