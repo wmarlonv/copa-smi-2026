@@ -14,8 +14,9 @@ import { db } from "./firebase";
 
 const BRAND = {
   name: "Copa SMI 2026",
-  logo: "/favicon.ico",
+  logo: "/SMI.png",
   arenaLogo: "/ARENA.png",
+  arenaBg: "/ARENA_BG.jpeg",
   arenaLink: "https://www.instagram.com/arenaultrarp/",
   sponsors: [
     { url: "/RPAUTO.png", link: "https://www.instagram.com/ribeiraopires.automoveis/" },
@@ -36,6 +37,9 @@ const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Jul
 
 // Helper para pegar apenas o primeiro nome e evitar quebra de layout
 const getShortName = (name) => name ? name.split(' ')[0] : '?';
+
+// Classes de CSS comuns para inputs de placar (Oculta setas e centraliza perfeitamente)
+const knockoutInputClass = "w-10 h-10 text-center bg-[#121214] text-[#E1E1E6] rounded-md border border-[#323238] outline-none shrink-0 font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none focus:border-red-500 transition-colors";
 
 // ============================================================================
 // 2. COMPONENTES REUTILIZÁVEIS
@@ -85,7 +89,7 @@ export default function TournamentApp() {
   const [stages, setStages] = useState([]);
   const [bets, setBets] = useState([]);
 
-  // Modais e Formulários (Atletas)
+  // Modais e Formulários
   const [editingPlayerId, setEditingPlayerId] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', side: 'R', uniformPaid: false, manualPts: 0, password: '' });
   const [showAddPlayerForm, setShowAddPlayerForm] = useState(false);
@@ -93,11 +97,12 @@ export default function TournamentApp() {
   const [newPlayerSide, setNewPlayerSide] = useState("R");
   const [newPlayerPassword, setNewPlayerPassword] = useState("");
 
-  // Etapas / Sorteio / Manual
+  // Etapas / Sorteio / Manual / Drag-n-Drop
   const [numGroupsToDraw, setNumGroupsToDraw] = useState(2);
   const [drawMode, setDrawMode] = useState('auto');
   const [manualPairing, setManualPairing] = useState({ p1: '', p2: '' });
   const [tempPairs, setTempPairs] = useState([]);
+  const [draggedTeam, setDraggedTeam] = useState(null);
   
   // Financeiro / Outros
   const [newTrans, setNewTrans] = useState({ desc: "", amount: "", type: "out" });
@@ -316,6 +321,48 @@ export default function TournamentApp() {
 
   const addPenalty = (sid) => { if(penaltyForm.playerId){ const s=stages.find(x=>x.id===sid); updateStage(sid, { penalties: [...(s.penalties || []), { id: Date.now(), pid: parseInt(penaltyForm.playerId), type: penaltyForm.type, pts: -1 }] }); }};
 
+  // -----------------------------------------------------------------------
+  // FUNÇÃO DE RENDERIZAÇÃO EMPILHADA COM DRAG AND DROP (Mata-Mata)
+  // -----------------------------------------------------------------------
+  const renderTeamKnockout = (m, side, sid) => {
+      const pair = m[side];
+      const isDragSource = draggedTeam?.mid === m.id && draggedTeam?.side === side;
+      
+      const p1Name = getShortName(players.find(x=>x.id===pair?.p1)?.name);
+      const p2Name = getShortName(players.find(x=>x.id===pair?.p2)?.name);
+
+      return (
+          <div 
+              draggable={isAdmin && !m.f}
+              onDragStart={(e) => {
+                 if (!isAdmin || m.f) return;
+                 setDraggedTeam({ mid: m.id, side, pair });
+              }}
+              onDragOver={(e) => { e.preventDefault(); }}
+              onDrop={(e) => {
+                 e.preventDefault();
+                 if (!isAdmin || !draggedTeam || m.f) return;
+                 const s = stages.find(x => x.id === sid);
+                 const newMatches = s.matches.map(match => {
+                     let updated = { ...match };
+                     if (match.id === draggedTeam.mid) updated[draggedTeam.side] = pair;
+                     if (match.id === m.id) updated[side] = draggedTeam.pair;
+                     return updated;
+                 });
+                 updateStage(sid, { matches: newMatches });
+                 setDraggedTeam(null);
+              }}
+              className={`flex-1 truncate w-full max-w-[130px] p-1 transition-all text-left
+                  ${isAdmin && !m.f ? 'cursor-grab hover:bg-[#323238] rounded-md' : ''} 
+                  ${isDragSource ? 'opacity-30 border border-dashed border-[#8D8D99]' : ''}`}
+              title={isAdmin && !m.f ? "Arraste para trocar os confrontos" : ""}
+          >
+              <div className="text-[#E1E1E6] font-bold text-xs uppercase truncate">{p1Name}</div>
+              <div className="text-[#8D8D99] font-bold text-[10px] uppercase truncate">{p2Name}</div>
+          </div>
+      );
+  };
+
   const menuItems = [
     { id: 'dashboard', icon: Trophy, label: 'Ranking Geral' },
     { id: 'stages', icon: Calendar, label: 'Etapas' },
@@ -335,7 +382,22 @@ export default function TournamentApp() {
       return (
         <div className="min-h-screen bg-[#121214] flex items-center justify-center p-4">
           <div className="bg-[#202024] w-full max-w-md rounded-md overflow-hidden shadow-2xl border border-[#323238] relative">
-            <div className="bg-red-600 p-6 flex flex-col items-center justify-center"><img src={BRAND.logo} alt="Logo" className="h-16 mb-2 drop-shadow-md" /><h1 className="text-2xl font-black text-white uppercase tracking-tight">Ranking Oficial</h1></div>
+            
+            <div className="relative p-8 flex flex-col items-center justify-center overflow-hidden border-b border-[#323238]">
+               <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: `url('${BRAND.arenaBg}')` }}></div>
+               <div className="absolute inset-0 z-0 bg-black/70"></div>
+               
+               <div className="relative z-10 flex items-center gap-5 mb-4">
+                   <img src={BRAND.logo} alt="Copa SMI" className="h-14 drop-shadow-md" />
+                   <span className="text-white/30 text-4xl font-light">|</span>
+                   <img src={BRAND.arenaLogo} alt="Arena" className="h-14 drop-shadow-md brightness-0 invert" />
+               </div>
+               
+               <h1 className="relative z-10 text-2xl font-black text-white uppercase tracking-tight drop-shadow-md text-center">
+                   Ranking Oficial
+               </h1>
+            </div>
+
             <div className="p-4"><table className="w-full text-left text-[#C4C4CC] text-sm">
                 <thead><tr className="border-b border-[#323238] text-xs text-[#8D8D99] uppercase tracking-wider"><th className="pb-2">Pos</th><th className="pb-2">Atleta</th>{showAdvancedStats&&<th className="text-center pb-2">V</th>}<th className="text-right pb-2">Pts</th></tr></thead>
                 <tbody className="divide-y divide-[#323238]">{ranking.filter(p => p.j > 0 || p.pts !== 0).slice(0,15).map((p,i) => (
@@ -347,12 +409,10 @@ export default function TournamentApp() {
                     </tr>
                 ))}</tbody>
               </table></div>
-            {/* CORREÇÃO AQUI: flex-wrap + justify-center e map completo */}
             <div className="bg-[#121214] p-4 flex flex-col items-center gap-4 border-t border-[#323238]">
                 <div className="flex flex-wrap justify-center gap-3 grayscale opacity-50">
                     {BRAND.sponsors.map((s,i)=><img key={i} src={s.url} alt="Sponsor" className="h-4 object-contain" />)}
                 </div>
-                <img src={BRAND.arenaLogo} alt="Arena" className="h-6 grayscale opacity-50"/>
             </div>
           </div>
           <button onClick={()=>setShareMode(false)} className="fixed bottom-6 right-6 bg-[#202024] border border-[#323238] text-[#E1E1E6] px-6 py-3 rounded-md font-bold shadow-lg flex items-center gap-2 hover:bg-[#29292E] transition-all"><ArrowLeft className="w-4 h-4"/> Voltar</button>
@@ -360,7 +420,6 @@ export default function TournamentApp() {
       );
   }
 
-  // MODO TV
   if(tvMode) {
       const stage = stages.find(s=>s.id===activeStageId) || stages[0];
       const stageRank = getStageRank(stage?.id);
@@ -391,7 +450,6 @@ export default function TournamentApp() {
                       <div className="flex w-full h-full gap-4">
                           <div className="flex-1 border-r border-[#323238] pr-4">
                               <div className="text-xs font-bold text-[#04D361] mb-2 uppercase tracking-widest">Classificados (Top 4)</div>
-                              {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
                               <table className="w-full text-left text-xs text-[#C4C4CC]"><thead className="text-[#8D8D99] uppercase"><tr><th className="pb-2">Dupla</th><th className="pb-2 text-center">V</th><th className="pb-2 text-center">S</th><th className="pb-2 text-center">PF</th></tr></thead><tbody className="divide-y divide-[#323238]">{stageRank.slice(0,4).map(r=><tr key={r.id}><td className="py-2 text-[#E1E1E6] font-bold truncate max-w-[150px]">{getShortName(players.find(x=>x.id===r.p1)?.name)} / {getShortName(players.find(x=>x.id===r.p2)?.name)}</td><td className="text-center text-[#04D361] font-bold">{r.v}</td><td className="text-center">{r.s}</td><td className="text-center">{r.pf}</td></tr>)}</tbody></table>
                           </div>
                           <div className="flex-1 pl-4">
@@ -498,10 +556,10 @@ export default function TournamentApp() {
                                                <div className="flex justify-between items-center mb-4 border-b border-[#323238] pb-2"><Badge color="gray">{m.stage}</Badge>{myBet && !isEditing && <Badge color="green"><CheckCircle className="w-3 h-3 inline mr-1"/>Palpite Salvo</Badge>}</div>
                                                <div className="flex justify-between items-center gap-4">
                                                    <div className="text-center flex-1 overflow-hidden w-1/3"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{getShortName(players.find(p=>p.id===m.pa?.p1)?.name)}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{getShortName(players.find(p=>p.id===m.pa?.p2)?.name)}</div></div>
-                                                   <div className="flex items-center gap-2 shrink-0">
-                                                       <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sAToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:e.target.value, sB:tempBet[m.id]?.sB||''}})} />
-                                                       <span className="text-[#8D8D99] font-bold">x</span>
-                                                       <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sBToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:tempBet[m.id]?.sA||'', sB:e.target.value}})} />
+                                                   <div className="flex items-center gap-2 shrink-0 justify-center w-[110px]">
+                                                       <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sAToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:e.target.value, sB:tempBet[m.id]?.sB||''}})} />
+                                                       <span className="text-[#8D8D99] font-bold w-3 text-center">x</span>
+                                                       <input type="number" disabled={myBet && !isEditing} className={`w-10 h-10 text-center rounded-md font-black text-lg [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none outline-none transition-colors ${myBet && !isEditing ? 'bg-[#121214] text-yellow-500 border border-yellow-500/30' : 'bg-[#29292E] text-[#E1E1E6] border border-[#323238] focus:border-yellow-500'}`} placeholder="-" value={sBToShow} onChange={e=>setTempBet({...tempBet, [m.id]:{sA:tempBet[m.id]?.sA||'', sB:e.target.value}})} />
                                                    </div>
                                                    <div className="text-center flex-1 overflow-hidden w-1/3"><div className="font-black text-[#E1E1E6] text-sm uppercase truncate">{getShortName(players.find(p=>p.id===m.pb?.p1)?.name)}</div><div className="font-bold text-[#8D8D99] text-xs uppercase truncate">{getShortName(players.find(p=>p.id===m.pb?.p2)?.name)}</div></div>
                                                </div>
@@ -614,19 +672,35 @@ export default function TournamentApp() {
                                              <div className="bg-[#29292E] px-4 py-2 text-xs font-bold text-[#E1E1E6] uppercase tracking-widest border-b border-[#323238]">{g.name}</div>
                                              <table className="w-full text-center text-xs text-[#C4C4CC] mb-2">
                                                  <thead className="text-[#8D8D99] font-medium uppercase border-b border-[#323238]/50"><tr><th className="py-3 px-1 text-left pl-4 font-medium">Dupla</th><th className="font-medium">V</th><th className="font-medium">S</th><th className="font-medium">PF</th><th className="font-medium">PS</th></tr></thead>
-                                                 {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
                                                  <tbody className="divide-y divide-[#323238]/50">{stats.map(row=>(<tr key={row.id} className="hover:bg-[#202024]"><td className="py-2.5 px-1 text-left pl-4 font-bold text-[#E1E1E6] truncate max-w-[120px]">{getShortName(players.find(x=>x.id===row.p1)?.name)} / {getShortName(players.find(x=>x.id===row.p2)?.name)}</td><td className="font-bold text-[#04D361]">{row.v}</td><td className="font-bold text-blue-400">{row.s}</td><td>{row.pro}</td><td>{row.contra}</td></tr>))}</tbody>
                                              </table>
                                              <div className="p-2 bg-[#202024] font-bold text-[10px] text-center text-[#8D8D99] uppercase tracking-widest border-y border-[#323238]">Confrontos</div>
-                                             <div className="divide-y divide-[#323238]/50">{(s.matches || [])?.filter(m=>m.gId===g.id).map(m => (
+                                             <div className="divide-y divide-[#323238]/50">{(s.matches || [])?.filter(m=>m.gId===g.id).map(m => {
+                                                const pa1Name = getShortName(players.find(x=>x.id===m.pa?.p1)?.name);
+                                                const pa2Name = getShortName(players.find(x=>x.id===m.pa?.p2)?.name);
+                                                const pb1Name = getShortName(players.find(x=>x.id===m.pb?.p1)?.name);
+                                                const pb2Name = getShortName(players.find(x=>x.id===m.pb?.p2)?.name);
+
+                                                return (
                                                    <div key={m.id} className="p-4 flex justify-between items-center text-sm text-[#E1E1E6] hover:bg-[#202024] transition-colors">
-                                                      {/* CORREÇÃO AQUI: Nomes curtos no lugar de D1 */}
-                                                      <span className="w-24 truncate font-bold text-[#8D8D99] text-[11px] uppercase text-right">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span>
-                                                      <div className="flex gap-2 items-center"><input type="number" disabled={!isAdmin} className={`w-10 h-10 text-center rounded-md font-bold text-base ${isAdmin?'bg-[#202024] border border-[#323238] focus:border-red-500 outline-none':'bg-transparent border-transparent'}`} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/><span className="text-[#8D8D99] font-bold">x</span><input type="number" disabled={!isAdmin} className={`w-10 h-10 text-center rounded-md font-bold text-base ${isAdmin?'bg-[#202024] border border-[#323238] focus:border-red-500 outline-none':'bg-transparent border-transparent'}`} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="text-[#04D361] ml-2 p-2 rounded hover:bg-[#04D361]/10 transition-colors"><CheckCircle className="w-5 h-5"/></button>}</div>
-                                                      <span className="w-24 truncate font-bold text-[#8D8D99] text-[11px] uppercase text-left">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span>
+                                                      <div className="flex-1 truncate text-left mr-2">
+                                                         <div className="text-[#E1E1E6] font-bold text-xs uppercase truncate">{pa1Name}</div>
+                                                         <div className="text-[#8D8D99] font-bold text-[10px] uppercase truncate">{pa2Name}</div>
+                                                      </div>
+                                                      <div className="flex gap-2 items-center justify-center shrink-0 w-[110px]">
+                                                         <input type="number" disabled={!isAdmin} className={knockoutInputClass} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/>
+                                                         <span className="text-[#8D8D99] font-bold text-[10px] w-3 text-center">x</span>
+                                                         <input type="number" disabled={!isAdmin} className={knockoutInputClass} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/>
+                                                      </div>
+                                                      <div className="flex-1 truncate text-right ml-2 flex flex-col items-end">
+                                                         <div className="text-[#E1E1E6] font-bold text-xs uppercase truncate">{pb1Name}</div>
+                                                         <div className="text-[#8D8D99] font-bold text-[10px] uppercase truncate">{pb2Name}</div>
+                                                      </div>
                                                       {isAdmin && <div className="flex gap-1 ml-4"><button onClick={()=>updateStage(s.id,{tv:{...(s.tv || {}), q1:m.id}})} className={`w-7 h-7 text-[9px] font-bold rounded flex items-center justify-center transition-colors ${s.tv?.q1===m.id?'bg-red-600 text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Q1</button>{s.q2Available && <button onClick={()=>updateStage(s.id,{tv:{...(s.tv || {}), q2:m.id}})} className={`w-7 h-7 text-[9px] font-bold rounded flex items-center justify-center transition-colors ${s.tv?.q2===m.id?'bg-red-600 text-white':'bg-[#29292E] text-[#8D8D99] hover:bg-[#323238]'}`}>Q2</button>}</div>}
+                                                      {isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="text-[#04D361] ml-2 p-1.5 rounded hover:bg-[#04D361]/10 transition-colors"><CheckCircle className="w-4 h-4"/></button>}
                                                    </div>
-                                             ))}</div>
+                                                )
+                                             })}</div>
                                           </div>
                                        )})}
                                     </div>
@@ -635,12 +709,78 @@ export default function TournamentApp() {
                                  {/* MATA MATA */}
                                  {(s.matches || [])?.some(m=>m.stage==='qf') && (
                                     <div className="mt-8 pt-8 border-t border-[#323238]">
-                                       <h3 className="font-bold text-center text-yellow-500 mb-6 uppercase tracking-widest text-sm">Fase Final (Mata-Mata)</h3>
-                                       <div className="overflow-x-auto pb-4"><div className="flex justify-center gap-6 min-w-[600px]">
-                                          <div className="w-40 space-y-4"><div className="text-center text-[10px] text-[#8D8D99] uppercase font-bold tracking-widest mb-4">Quartas</div>{(s.matches || []).filter(m=>m.stage==='qf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-[#323238] shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && !s.matches.find(m=>m.stage==='sf') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'qf')}>Montar Semi</Button>}</div>
-                                          <div className="w-40 space-y-8 pt-8"><div className="text-center text-[10px] text-blue-500 uppercase font-bold tracking-widest mb-4">Semi-Final</div>{(s.matches || []).filter(m=>m.stage==='sf').map(m=>(<div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-blue-500/30 shadow-sm"><div className="flex justify-between items-center mb-2"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-bold text-[#8D8D99] truncate max-w-[80px]">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#121214] text-center text-[#E1E1E6] rounded border border-[#323238] outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar</button>}</div>))}{isAdmin && s.matches.find(m=>m.stage==='sf') && !s.matches.find(m=>m.stage==='final') && <Button variant="outline" className="w-full mt-4" onClick={()=>advanceBracket(s.id, 'sf')}>Montar Final</Button>}</div>
-                                          <div className="w-48 space-y-6 pt-16"><div className="text-center text-[10px] text-yellow-500 uppercase font-bold tracking-widest mb-4">Grande Final</div>{(s.matches || []).filter(m=>m.stage==='final').map(m=>(<div key={m.id} className="bg-[#202024] border border-yellow-500/50 p-5 rounded-md text-sm shadow-md"><div className="flex justify-between items-center mb-4"><span className="font-black text-[#E1E1E6] truncate max-w-[100px] text-xs uppercase">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)} /<br/>{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none shrink-0" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><div className="flex justify-between items-center"><span className="font-black text-[#E1E1E6] truncate max-w-[100px] text-xs uppercase">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)} /<br/>{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span><input disabled={!isAdmin} type="number" className="w-10 h-10 text-center bg-[#121214] border border-[#323238] text-yellow-500 font-bold rounded-md outline-none shrink-0" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>{isAdmin && !m.f && <Button className="w-full mt-5 bg-yellow-500 hover:bg-yellow-600 text-[#121214]" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar Decisão</Button>}</div>))}{(s.matches || []).filter(m=>m.stage==='3rd').map(m=>(<div key={m.id} className="mt-8 pt-6 border-t border-[#323238] text-center"><div className="text-[10px] text-[#8D8D99] mb-3 uppercase font-bold tracking-widest">3º Lugar</div><div className="bg-[#121214] p-3 rounded-md flex justify-between items-center border border-[#323238]"><span className="font-bold text-[#8D8D99] truncate w-16 text-left">{getShortName(players.find(x=>x.id===m.pa?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pa?.p2)?.name)}</span><div className="flex gap-2 items-center shrink-0"><input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/> <span className="text-[10px] text-[#8D8D99]">x</span> <input disabled={!isAdmin} type="number" className="w-8 h-8 bg-[#202024] text-center text-[#E1E1E6] border border-[#323238] rounded font-bold outline-none" value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div><span className="font-bold text-[#8D8D99] truncate w-16 text-right">{getShortName(players.find(x=>x.id===m.pb?.p1)?.name)}/{getShortName(players.find(x=>x.id===m.pb?.p2)?.name)}</span></div>{isAdmin && !m.f && <Button variant="secondary" className="w-full mt-3" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar 3º</Button>}</div>))}</div>
-                                       </div></div>
+                                       <div className="flex flex-col items-center mb-6">
+                                           <h3 className="font-bold text-center text-yellow-500 uppercase tracking-widest text-sm">Fase Final (Mata-Mata)</h3>
+                                           {isAdmin && <span className="text-[10px] text-[#8D8D99] font-bold mt-1 bg-[#202024] px-2 py-1 rounded border border-[#323238]">Arraste uma dupla sobre a outra para alterar a chave</span>}
+                                       </div>
+                                       
+                                       <div className="overflow-x-auto pb-4 custom-scrollbar">
+                                          <div className="min-w-[700px] px-2">
+                                             
+                                             {/* HEADER DO MATA-MATA */}
+                                             <div className="flex justify-center items-center gap-6 mb-4">
+                                                <div className="w-48 text-center text-[10px] text-[#8D8D99] uppercase font-bold tracking-widest">Quartas</div>
+                                                <div className="w-48 text-center text-[10px] text-blue-500 uppercase font-bold tracking-widest">Semi-Final</div>
+                                                <div className="w-56 text-center text-[10px] text-yellow-500 uppercase font-bold tracking-widest">Decisões</div>
+                                             </div>
+
+                                             {/* COLUNAS COM ALINHAMENTO MATEMÁTICO */}
+                                             <div className="flex justify-center items-stretch gap-6 min-h-[500px]">
+                                                {/* QUARTAS */}
+                                                <div className="w-48 flex flex-col">
+                                                   <div className="flex-1 flex flex-col justify-around py-2 gap-4">
+                                                      {(s.matches || []).filter(m=>m.stage==='qf').map(m=>(
+                                                         <div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-[#323238] shadow-sm">
+                                                            <div className="flex justify-between items-center mb-3 gap-2">{renderTeamKnockout(m, 'pa', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                            <div className="flex justify-between items-center gap-2">{renderTeamKnockout(m, 'pb', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                            {isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar Jogo</button>}
+                                                         </div>
+                                                      ))}
+                                                   </div>
+                                                   {isAdmin && !s.matches.find(m=>m.stage==='sf') && <Button variant="outline" className="w-full mt-2" onClick={()=>advanceBracket(s.id, 'qf')}>Montar Semi</Button>}
+                                                </div>
+
+                                                {/* SEMIS */}
+                                                <div className="w-48 flex flex-col">
+                                                   <div className="flex-1 flex flex-col justify-around py-2">
+                                                      {(s.matches || []).filter(m=>m.stage==='sf').map(m=>(
+                                                         <div key={m.id} className="bg-[#202024] p-3 rounded-md text-sm border border-blue-500/30 shadow-sm">
+                                                            <div className="flex justify-between items-center mb-3 gap-2">{renderTeamKnockout(m, 'pa', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                            <div className="flex justify-between items-center gap-2">{renderTeamKnockout(m, 'pb', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                            {isAdmin && !m.f && <button onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})} className="w-full mt-3 bg-transparent text-[#04D361] border border-[#04D361]/30 hover:bg-[#04D361]/10 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors">Encerrar Jogo</button>}
+                                                         </div>
+                                                      ))}
+                                                   </div>
+                                                   {isAdmin && s.matches.find(m=>m.stage==='sf') && !s.matches.find(m=>m.stage==='final') && <Button variant="outline" className="w-full mt-2" onClick={()=>advanceBracket(s.id, 'sf')}>Montar Final</Button>}
+                                                </div>
+
+                                                {/* FINAIS E 3º LUGAR */}
+                                                <div className="w-56 flex flex-col justify-center">
+                                                   {(s.matches || []).filter(m=>m.stage==='final').map(m=>(
+                                                      <div key={m.id} className="bg-[#202024] border border-yellow-500/50 p-4 rounded-md text-sm shadow-md mb-6 relative">
+                                                         <div className="flex justify-between items-center mb-3 gap-2">{renderTeamKnockout(m, 'pa', s.id)}<input disabled={!isAdmin} type="number" className={`${knockoutInputClass} text-yellow-500 border-yellow-500/30`} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                         <div className="flex justify-between items-center gap-2">{renderTeamKnockout(m, 'pb', s.id)}<input disabled={!isAdmin} type="number" className={`${knockoutInputClass} text-yellow-500 border-yellow-500/30`} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                         {isAdmin && !m.f && <Button className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-[#121214]" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar Decisão</Button>}
+                                                      </div>
+                                                   ))}
+
+                                                   {/* BLOCO DO 3º LUGAR IGUAL DA FINAL */}
+                                                   {(s.matches || []).some(m=>m.stage==='3rd') && (
+                                                      <div className="border-t border-[#323238] pt-6 w-full">
+                                                         <div className="text-[10px] text-[#8D8D99] mb-3 uppercase font-bold tracking-widest text-center">Disputa de 3º Lugar</div>
+                                                         {(s.matches || []).filter(m=>m.stage==='3rd').map(m=>(
+                                                            <div key={m.id} className="bg-[#202024] border border-[#323238] p-4 rounded-md text-sm shadow-md">
+                                                               <div className="flex justify-between items-center mb-3 gap-2">{renderTeamKnockout(m, 'pa', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sA} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sA:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                               <div className="flex justify-between items-center gap-2">{renderTeamKnockout(m, 'pb', s.id)}<input disabled={!isAdmin} type="number" className={knockoutInputClass} value={m.sB} onChange={e=>{const nm=s.matches.map(x=>x.id===m.id?{...x,sB:Number(e.target.value)}:x); updateStage(s.id,{matches:nm})}}/></div>
+                                                               {isAdmin && !m.f && <Button variant="secondary" className="w-full mt-4" onClick={()=>setMatchToFinish({sid:s.id, mid:m.id})}>Encerrar 3º Lugar</Button>}
+                                                            </div>
+                                                         ))}
+                                                      </div>
+                                                   )}
+                                                </div>
+                                             </div>
+                                          </div>
+                                       </div>
                                     </div>
                                  )}
 
